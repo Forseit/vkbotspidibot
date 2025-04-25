@@ -1,5 +1,5 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, ReplyKeyboardRemove
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, CallbackQueryHandler
+from telegram.ext import Updater, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
 import logging
 from datetime import datetime
 import threading
@@ -166,7 +166,7 @@ def main() -> None:
         dispatcher = updater.dispatcher
         dispatcher.add_handler(CommandHandler("start", BotHandlers.start))
         dispatcher.add_handler(CallbackQueryHandler(BotHandlers.handle_language_selection))
-        dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, BotHandlers.forward_complaint))
+        dispatcher.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, BotHandlers.forward_complaint))
         updater.start_polling()
         logger.info("Бот успешно запущен")
         updater.idle()
