@@ -156,16 +156,6 @@ def bot_status_monitor():
             print(f"Error in status monitor: {e}")
             time.sleep(60)
 
-def bot_status_monitor():
-    while True:
-        try:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"[{now}] Бот работает...")
-            time.sleep(60)
-        except Exception as e:
-            print(f"Error in status monitor: {e}")
-            time.sleep(60)
-
 async def main():
     try:
         status_thread = threading.Thread(target=bot_status_monitor, daemon=True)
