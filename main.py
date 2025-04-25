@@ -185,7 +185,3 @@ async def main():
 if __name__ == "__main__":
     import asyncio
     asyncio.run(main())
-
-
-[2025-04-25 13:22:23] Бот работает...
-2025-04-25 13:22:23,345 - __main__ - ERROR - Fatal error in bot startup: Only timezones from the pytz library are supported
