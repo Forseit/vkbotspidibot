@@ -49,7 +49,7 @@ MESSAGES = {
         "3. Шутки/рофлы в сторону администрации бота карается баном на _5-15 дней_ (на усмотрение администратора)\n"
         "4. Оскорбление администратора, его семьи или даже простое затрагивание родных карается баном на _20-40 дней_\n"
         "5. Угрозы доксом сватом карается баном _навсегда_",
-        "blocked": "```\nВы в Черном Списке бота.\nПричина: {reason}\nЗаканчивается в {time}```\n",
+        "blocked": "```\nВы в Черном Списке бота.\nПричина: {reason}\nЗаканчивается в {time} по Мск```\n",
         "blocked_perm": "```\nВы в Черном Списке бота.\nПричина: {reason}\nЗаканчивается никогда```\n",
         "no_permission": "⛔ У вас недостаточно прав для выполнения этой команды",
         "user_not_found": "❌ Пользователь не найден",
@@ -307,14 +307,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Пересылка сообщения в группу
     if update.message.chat.type == "private" and GROUP_ID:
-        # Сохраняем связь между сообщением в группе и пользователем
-        forwarded_msg = await context.bot.forward_message(
-            chat_id=GROUP_ID,
-            from_chat_id=update.message.chat_id,
-            message_id=update.message.message_id
-        )
-        # Сохраняем информацию о пересылке в контексте
-        context.chat_data[forwarded_msg.message_id] = user_id
+        try:
+            # Пересылаем сообщение в группу
+            forwarded_msg = await context.bot.forward_message(
+                chat_id=GROUP_ID,
+                from_chat_id=update.message.chat_id,
+                message_id=update.message.message_id
+            )
+
+            # Сохраняем связь между сообщением в группе и пользователем
+            if not hasattr(context, 'forwarded_messages'):
+                context.forwarded_messages = {}
+
+            context.forwarded_messages[forwarded_msg.message_id] = {
+                'user_id': user_id,
+                'original_message_id': update.message.message_id
+            }
+        except Exception as e:
+            logger.error(f"Error forwarding message: {e}")
 
 # Обработчик ответа админа
 async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -324,21 +334,40 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not update.message.reply_to_message:
         return
 
-    # Получаем ID пользователя из сохраненных данных
-    user_id = context.chat_data.get(update.message.reply_to_message.message_id)
+    # Получаем ID сообщения, на которое ответили
+    replied_msg_id = update.message.reply_to_message.message_id
 
-    if not user_id:
-        # Если не нашли по message_id, пробуем получить из пересланного сообщения
-        if update.message.reply_to_message.forward_from:
-            user_id = update.message.reply_to_message.forward_from.id
+    # Пробуем получить информацию о пересланном сообщении
+    try:
+        if hasattr(context, 'forwarded_messages') and replied_msg_id in context.forwarded_messages:
+            # Если это сообщение, которое бот переслал в группу
+            user_data = context.forwarded_messages[replied_msg_id]
+            user_id = user_data['user_id']
+            original_message_id = user_data['original_message_id']
         else:
-            return
+            # Если это пересланное сообщение от пользователя (не через forward_message)
+            if update.message.reply_to_message.forward_from:
+                user_id = update.message.reply_to_message.forward_from.id
+                original_message_id = None
+            else:
+                return
+    except Exception as e:
+        logger.error(f"Error getting reply info: {e}")
+        return
 
     try:
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=update.message.text
-        )
+        # Отправляем ответ пользователю
+        if original_message_id:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=update.message.text,
+                reply_to_message_id=original_message_id
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=update.message.text
+            )
     except Exception as e:
         logger.error(f"Error sending message to user {user_id}: {e}")
         await update.message.reply_text("❌ Не удалось отправить сообщение пользователю")
@@ -489,10 +518,15 @@ def main():
     application.add_handler(MessageHandler(filters.REPLY & filters.Chat(GROUP_ID), handle_admin_reply))
     application.add_handler(CommandHandler("block", block_command))
 
-    # Запускаем бота
-    application.job_queue.run_repeating(print_status, interval=60, first=0)
-    application.job_queue.run_repeating(update_block_times, interval=60, first=0)
-    application.run_polling()
+    # Запускаем бота с обработкой ошибок
+    try:
+        application.job_queue.run_repeating(print_status, interval=60, first=0)
+        application.job_queue.run_repeating(update_block_times, interval=60, first=0)
+        application.run_polling()
+    except telegram.error.Conflict:
+        logger.error("Ошибка: бот уже запущен в другом процессе. Остановите другие экземпляры.")
+    except Exception as e:
+        logger.error(f"Произошла непредвиденная ошибка: {e}")
 
 if __name__ == "__main__":
     main()
